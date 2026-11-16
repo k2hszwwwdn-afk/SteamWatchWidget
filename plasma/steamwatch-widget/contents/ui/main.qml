@@ -4,7 +4,6 @@ import QtQuick.Layouts
 import QtCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
-import org.kde.plasma.extras as PlasmaExtras
 import org.kde.plasma.plasma5support as Plasma5Support
 
 PlasmoidItem {
@@ -15,7 +14,11 @@ PlasmoidItem {
     property string searchText: ""
     property string scanError: ""
     property bool loading: true
+    property string selectedGameId: ""
     property int refreshNonce: 0
+    property color textColor: "#66c0f4"
+    property bool transparentBackground: false
+    property bool showArtwork: true
     property string scannerPath: decodeURIComponent(
         StandardPaths.writableLocation(StandardPaths.GenericDataLocation)
             .toString().replace(/^file:\/\//, "").replace(/\/$/, "")
@@ -25,7 +28,9 @@ PlasmoidItem {
 
     Plasmoid.title: i18n("Steam Watch")
     Plasmoid.icon: "steam"
-    Plasmoid.backgroundHints: PlasmaCore.Types.DefaultBackground
+    Plasmoid.backgroundHints: root.transparentBackground
+                              ? PlasmaCore.Types.NoBackground
+                              : PlasmaCore.Types.DefaultBackground
     preferredRepresentation: fullRepresentation
 
     function shellQuote(value) {
@@ -38,11 +43,24 @@ PlasmoidItem {
         refreshNonce += 1
     }
 
+    function reloadWidgetSettings() {
+        textColor = Plasmoid.configuration.textColor || "#66c0f4"
+        transparentBackground = Plasmoid.configuration.transparentBackground === true
+                || Plasmoid.configuration.transparentBackground === "true"
+        showArtwork = Plasmoid.configuration.showArtwork !== false
+                && Plasmoid.configuration.showArtwork !== "false"
+    }
+
     function updateFilteredGames() {
         var query = searchText.trim().toLocaleLowerCase()
         filteredGames = games.filter(function(game) {
             return game.name.toLocaleLowerCase().indexOf(query) !== -1
         })
+        if (selectedGameId && !filteredGames.some(function(game) {
+            return game.appid === selectedGameId
+        })) {
+            selectedGameId = ""
+        }
     }
 
     function acceptScan(data) {
@@ -84,6 +102,16 @@ PlasmoidItem {
         }
     }
 
+    function selectedGame() {
+        return games.find(function(game) {
+            return game.appid === selectedGameId
+        }) || null
+    }
+
+    function selectGame(appId) {
+        selectedGameId = appId
+    }
+
     Plasma5Support.DataSource {
         id: scanner
         engine: "executable"
@@ -107,7 +135,7 @@ PlasmoidItem {
 
             QQC2.Label {
                 text: "S"
-                color: "#66c0f4"
+                color: root.textColor
                 font.bold: true
                 font.pixelSize: 22
                 Layout.preferredWidth: 24
@@ -121,6 +149,7 @@ PlasmoidItem {
                 text: root.loading
                       ? i18n("Steam Games…")
                       : i18np("Steam · %1 game", "Steam · %1 games", root.games.length)
+                color: root.textColor
                 elide: Text.ElideRight
             }
         }
@@ -145,17 +174,35 @@ PlasmoidItem {
                 Layout.fillWidth: true
                 QQC2.Label {
                     Layout.fillWidth: true
-                    text: i18n("Installed Steam Games")
+                    text: i18n("Steam Games")
                     font.bold: true
                     font.pixelSize: 16
+                    color: root.textColor
                 }
                 QQC2.ToolButton {
-                    icon.name: "view-refresh"
+                    id: refreshButton
                     text: i18n("Refresh")
-                    display: QQC2.AbstractButton.IconOnly
+                    display: QQC2.AbstractButton.TextOnly
+                    implicitWidth: 34
+                    implicitHeight: 34
                     onClicked: root.refreshGames()
                     QQC2.ToolTip.text: i18n("Refresh game list")
                     QQC2.ToolTip.visible: hovered
+
+                    contentItem: QQC2.Label {
+                        text: "↻"
+                        color: root.textColor
+                        font.pixelSize: 24
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    background: Rectangle {
+                        radius: 6
+                        color: refreshButton.hovered
+                               ? Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.16)
+                               : "transparent"
+                    }
                 }
             }
 
@@ -164,6 +211,10 @@ PlasmoidItem {
                 Layout.fillWidth: true
                 placeholderText: i18n("Search installed games")
                 enabled: root.games.length > 0
+                color: root.textColor
+                placeholderTextColor: Qt.rgba(
+                    root.textColor.r, root.textColor.g, root.textColor.b, 0.65
+                )
                 onTextChanged: {
                     root.searchText = text
                     root.updateFilteredGames()
@@ -171,10 +222,34 @@ PlasmoidItem {
             }
 
             QQC2.ScrollView {
+                id: gamesScrollView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 contentWidth: availableWidth
+
+                QQC2.ScrollBar.vertical: QQC2.ScrollBar {
+                    id: gamesScrollBar
+                    parent: gamesScrollView
+                    anchors.top: gamesScrollView.top
+                    anchors.right: gamesScrollView.right
+                    anchors.bottom: gamesScrollView.bottom
+
+                    background: Rectangle {
+                        color: root.transparentBackground
+                               ? "transparent"
+                               : Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.08)
+                    }
+
+                    contentItem: Rectangle {
+                        implicitWidth: 6
+                        radius: width / 2
+                        color: Qt.rgba(
+                            root.textColor.r, root.textColor.g, root.textColor.b,
+                            root.transparentBackground ? 0.5 : 0.8
+                        )
+                    }
+                }
 
                 ListView {
                     id: gameList
@@ -188,9 +263,13 @@ PlasmoidItem {
                         width: gameList.width
                         height: 64
                         radius: 8
-                        color: gameMouseArea.containsMouse
-                               ? Qt.rgba(1, 1, 1, 0.08)
-                               : "transparent"
+                        color: modelData.appid === root.selectedGameId
+                               ? Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.16)
+                               : gameMouseArea.containsMouse
+                                 ? Qt.rgba(1, 1, 1, 0.08)
+                                 : "transparent"
+                        border.width: modelData.appid === root.selectedGameId ? 1 : 0
+                        border.color: root.textColor
 
                         RowLayout {
                             anchors.fill: parent
@@ -207,7 +286,7 @@ PlasmoidItem {
                                 Image {
                                     id: coverArt
                                     anchors.fill: parent
-                                    source: Plasmoid.configuration.showArtwork
+                                    source: root.showArtwork
                                            && modelData.artworkPath
                                            ? encodeURI("file://" + modelData.artworkPath)
                                            : ""
@@ -221,6 +300,7 @@ PlasmoidItem {
                                     text: modelData.name.substring(0, 1).toUpperCase()
                                     font.bold: true
                                     font.pixelSize: 22
+                                    color: root.textColor
                                     visible: coverArt.status !== Image.Ready
                                 }
                             }
@@ -228,15 +308,10 @@ PlasmoidItem {
                             QQC2.Label {
                                 Layout.fillWidth: true
                                 text: modelData.name
+                                color: root.textColor
                                 elide: Text.ElideRight
                                 maximumLineCount: 2
                                 wrapMode: Text.Wrap
-                            }
-
-                            QQC2.Button {
-                                text: i18n("Play")
-                                icon.name: "media-playback-start"
-                                onClicked: root.launchGame(modelData.appid)
                             }
                         }
 
@@ -244,19 +319,23 @@ PlasmoidItem {
                             id: gameMouseArea
                             anchors.fill: parent
                             hoverEnabled: true
-                            acceptedButtons: Qt.NoButton
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.selectGame(modelData.appid)
+                            onDoubleClicked: root.launchGame(modelData.appid)
                         }
                     }
 
-                    PlasmaExtras.PlaceholderMessage {
+                    QQC2.Label {
                         anchors.centerIn: parent
                         width: parent.width - 32
                         visible: !root.loading && root.scanError.length === 0
                                  && root.filteredGames.length === 0
-                        iconName: "steam"
                         text: root.games.length === 0
                               ? i18n("No installed Steam games found")
                               : i18n("No games match your search")
+                        color: root.textColor
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
                     }
                 }
             }
@@ -265,7 +344,7 @@ PlasmoidItem {
                 Layout.fillWidth: true
                 visible: root.scanError.length > 0
                 text: root.scanError
-                color: "#e05a5a"
+                color: root.textColor
                 wrapMode: Text.Wrap
             }
 
@@ -273,14 +352,94 @@ PlasmoidItem {
                 Layout.fillWidth: true
                 QQC2.Label {
                     Layout.fillWidth: true
-                    text: root.loading
-                          ? i18n("Scanning Steam libraries…")
-                          : i18np("%1 game", "%1 games", root.filteredGames.length)
+                    text: root.selectedGame()
+                          ? i18n("Selected: %1", root.selectedGame().name)
+                          : root.loading
+                            ? i18n("Scanning Steam libraries…")
+                            : i18np("%1 game", "%1 games", root.filteredGames.length)
+                    color: root.textColor
                     opacity: 0.72
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 32
+
+                Rectangle {
+                    id: playHalo
+                    anchors.fill: playButton
+                    anchors.margins: -3
+                    radius: 11
+                    color: root.textColor
+                    property real glowPulse: 0.34
+                    opacity: playButton.enabled ? glowPulse : 0
+
+                    SequentialAnimation on glowPulse {
+                        running: playButton.enabled
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 0.52; duration: 850; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: 0.28; duration: 850; easing.type: Easing.InOutSine }
+                    }
+                }
+
+                QQC2.Button {
+                    id: playButton
+                    anchors.centerIn: parent
+                    width: parent.width * 0.5
+                    height: 28
+                    text: i18n("SELECT")
+                    enabled: root.selectedGame() !== null
+                    onClicked: {
+                        var game = root.selectedGame()
+                        if (game) {
+                            root.launchGame(game.appid)
+                        }
+                    }
+
+                    background: Rectangle {
+                        radius: 8
+                        color: playButton.enabled
+                               ? Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.18)
+                               : Qt.rgba(1, 1, 1, 0.04)
+                        border.width: 1
+                        border.color: playButton.enabled
+                                      ? root.textColor
+                                      : Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.35)
+                    }
+
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Item { Layout.fillWidth: true }
+                        QQC2.Label {
+                            text: "▶"
+                            color: root.textColor
+                            font.pixelSize: 14
+                        }
+                        QQC2.Label {
+                            text: i18n("SELECT")
+                            color: root.textColor
+                            font.bold: true
+                            font.letterSpacing: 0.8
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: parent.width * 0.6
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
                 }
             }
         }
     }
 
-    Component.onCompleted: refreshGames()
+    Timer {
+        interval: 250
+        repeat: true
+        running: true
+        onTriggered: root.reloadWidgetSettings()
+    }
+
+    Component.onCompleted: {
+        reloadWidgetSettings()
+        refreshGames()
+    }
 }
