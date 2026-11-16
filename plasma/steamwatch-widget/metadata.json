@@ -1,0 +1,19 @@
+{
+  "KPackageStructure": "Plasma/Applet",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "NeoMatrix789"
+      }
+    ],
+    "Category": "Application Launchers",
+    "Description": "Browse and launch installed Steam games",
+    "EnabledByDefault": true,
+    "Icon": "steam",
+    "Id": "io.github.k2hszwwwdn.steamwatchwidget",
+    "License": "MIT",
+    "Name": "Steam Watch",
+    "Version": "1.0"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0"
+}
